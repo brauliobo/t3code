@@ -790,6 +790,7 @@ function listItemFromShell(
     ...threadSnooze(shell, nowMs),
     parentThreadId: shell.lineage.parentThreadId,
     relationshipToParent: shell.lineage.relationshipToParent,
+    ...(shell.voiceCall === undefined ? {} : { voiceCall: shell.voiceCall }),
     itemCount: shell.visibleItemCount,
     createdAt: DateTime.formatIso(shell.createdAt),
     updatedAt: DateTime.formatIso(shell.updatedAt),
@@ -833,6 +834,9 @@ function threadDetail(
     worktreePath: projection.thread.worktreePath,
     parentThreadId: projection.thread.lineage.parentThreadId,
     relationshipToParent: projection.thread.lineage.relationshipToParent,
+    ...(projection.thread.voiceCall === undefined
+      ? {}
+      : { voiceCall: projection.thread.voiceCall }),
     runCount: projection.runs.length,
     itemCount,
     pendingRequestCount: projection.runtimeRequests.filter(
@@ -1169,7 +1173,7 @@ const make = Effect.gen(function* () {
     parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs"> | undefined,
     target: Pick<OrchestrationV2ThreadProjection, "thread">,
   ) =>
-    parent === undefined || target.thread.id === parent.thread.id
+    parent === undefined || target.thread.id === parent.thread.id || scope.thread?.call === true
       ? Effect.void
       : assertLiveCaller(scope, parent);
 

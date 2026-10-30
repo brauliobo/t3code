@@ -169,6 +169,7 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import { voiceTranscriptMessage, voiceTranscriptTurnItem } from "./VoiceTranscript.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -551,6 +552,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.parentThreadId;
     case "secret_request.record":
     case "link_request.record":
+    case "voice_transcript.record":
       return command.threadId;
     case "thread.fork":
     case "thread.merge_back":
@@ -2648,6 +2650,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
+    const parent =
+      command.parentThreadId === undefined
+        ? null
+        : yield* projectionStore
+            .getThread(command.parentThreadId)
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestratorProjectionError({ threadId: command.parentThreadId!, cause }),
+              ),
+            );
+
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
     const thread: OrchestrationV2AppThread = {
@@ -2669,11 +2683,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
-      lineage: {
-        parentThreadId: null,
-        relationshipToParent: null,
-        rootThreadId: command.threadId,
-      },
+      ...(command.voiceCall === undefined ? {} : { voiceCall: command.voiceCall }),
+      lineage:
+        parent === null
+          ? { parentThreadId: null, relationshipToParent: null, rootThreadId: command.threadId }
+          : {
+              parentThreadId: parent.id,
+              relationshipToParent: "subagent",
+              rootThreadId: parent.lineage.rootThreadId,
+            },
       forkedFrom: null,
       createdAt: now,
       updatedAt: now,
@@ -8440,6 +8458,48 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
+  /** Keeps a spoken line in the chat of a call; it belongs to no run, so nothing runs for it. */
+  const dispatchVoiceTranscriptRecord = Effect.fn("orchestrationV2.dispatch.voiceTranscriptRecord")(
+    function* (
+      command: Extract<
+        OrchestrationV2InternalCommand,
+        { readonly type: "voice_transcript.record" }
+      >,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const onError = Effect.mapError(
+        (cause: unknown) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+      );
+      const itemId = idAllocator.derive.userTurnItem({ messageId: command.messageId });
+      const existing = yield* projectionStore
+        .getTurnItem({ threadId: command.threadId, itemId })
+        .pipe(onError);
+      const thread = yield* projectionStore.getThread(command.threadId).pipe(onError);
+      if (thread.deletedAt !== null) {
+        return yield* new OrchestratorProjectionError({
+          threadId: command.threadId,
+          cause: "The chat of this call was deleted.",
+        });
+      }
+      const now = yield* DateTime.now;
+      const startedAt = existing?.startedAt ?? now;
+      const ordinal = existing?.ordinal ?? (yield* nextTurnItemOrdinal({ thread }));
+      const emitEvent = emit(events, command);
+      yield* emitEvent({
+        type: "message.updated",
+        threadId: command.threadId,
+        occurredAt: now,
+        payload: voiceTranscriptMessage(command, { startedAt, now }),
+      });
+      yield* emitEvent({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        occurredAt: now,
+        payload: voiceTranscriptTurnItem(command, { itemId, ordinal, startedAt, now }),
+      });
+    },
+  );
+
   /**
    * Records or updates the card for a link an agent asked the user to make.
    * The pairing code goes straight to the link and never through orchestration.
@@ -13042,6 +13102,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "link_request.record":
         yield* dispatchLinkRequestRecord(command, events, effects);
+        break;
+      case "voice_transcript.record":
+        yield* dispatchVoiceTranscriptRecord(command, events);
         break;
       default:
         return yield* dispatchUnsupported(command);
