@@ -70,6 +70,9 @@ import { orchestrationEnvironment } from "../../state/orchestration";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { AgentElapsed } from "./AgentElapsed";
 import { ThreadRelationshipIcon, threadRelationshipStatusLabel } from "./ThreadRelationshipIcon";
+import { VoiceCallIcon } from "./VoiceCallIcon";
+import { threadVoiceCallRow } from "./threadVoiceCall";
+import { isVoiceCallChat, useThreadVoiceCall } from "~/hooks/useVoiceCall";
 import { ThreadLineageWorkflowRow } from "./ThreadLineageWorkflowRow";
 
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -352,6 +355,7 @@ export function ThreadRelationshipsPanel(props: {
 }) {
   const ref = scopeThreadRef(props.environmentId, props.threadId);
   const projection = useThreadProjection(ref)?.projection ?? null;
+  const voiceCall = useThreadVoiceCall(props.environmentId, props.threadId);
   const providersByEnvironment = useEnvironmentProviders();
   const relationshipShells = useThreadRelationshipShells(ref);
   const allProjects = useProjects();
@@ -447,9 +451,10 @@ export function ThreadRelationshipsPanel(props: {
     related = [],
     active = [],
     previous = [],
-  } = groupBy(relationshipRows, ({ edge }) => {
+  } = groupBy(relationshipRows, ({ edge, threadId }) => {
     if (edge.kind !== "subagent" || isParentThreadRelationship(edge, props.threadId))
       return "related";
+    if (isVoiceCallChat(voiceCall, threadId)) return "active";
     return ["completed", "failed", "error", "cancelled", "interrupted", "idle"].includes(
       edge.status ?? "",
     )
@@ -624,6 +629,12 @@ export function ThreadRelationshipsPanel(props: {
                 ? projectedAgent
                 : currentSubagent(projectedAgent, node?.thread);
               const failed = rowStatus === "failed" || rowStatus === "error";
+              const voiceRow = threadVoiceCallRow(
+                voiceCall,
+                threadId,
+                node?.thread?.voiceCall,
+                providers,
+              );
               const canStop =
                 agent &&
                 (agent.origin === "app_owned" ||
@@ -660,7 +671,7 @@ export function ThreadRelationshipsPanel(props: {
               const project = projects.find((project) => project.id === node?.thread?.projectId);
               const relationshipHint = node?.missing
                 ? "This related thread is unavailable"
-                : `Open ${relationship.toLowerCase()} in this chat`;
+                : (voiceRow.hint ?? `Open ${relationship.toLowerCase()} in this chat`);
               const RelationshipPopup = agent ? ThreadHoverCardPopup : TooltipPopup;
               const relationshipTooltip = agent ? (
                 <SubagentTooltipContent
@@ -686,12 +697,19 @@ export function ThreadRelationshipsPanel(props: {
               );
               const relationshipContent = (
                 <>
-                  <ThreadRelationshipIcon
-                    driver={isSubagent && !isParent ? providerDriver : undefined}
-                    provider={provider}
-                    fallbackIcon={RelationshipIcon}
-                    status={rowStatus}
-                  />
+                  {voiceRow.isCall ? (
+                    <VoiceCallIcon
+                      call={voiceRow.live ? voiceCall : null}
+                      className="size-4 shrink-0 text-info-foreground"
+                    />
+                  ) : (
+                    <ThreadRelationshipIcon
+                      driver={isSubagent && !isParent ? providerDriver : undefined}
+                      provider={provider}
+                      fallbackIcon={RelationshipIcon}
+                      status={rowStatus}
+                    />
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
                       {threadTitle}
@@ -716,7 +734,7 @@ export function ThreadRelationshipsPanel(props: {
                           : `shrink-0 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"} ${trailingVisibilityClass}`
                       }
                     >
-                      {threadRelationshipStatusLabel(rowStatus)}
+                      {voiceRow.status ?? threadRelationshipStatusLabel(rowStatus)}
                     </span>
                   ) : null}
                 </>
