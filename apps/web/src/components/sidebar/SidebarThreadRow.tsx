@@ -1,5 +1,7 @@
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
+import { useThreadVoiceCall } from "../../hooks/useVoiceCall";
+import { VoiceCallIcon } from "../chat/VoiceCallIcon";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
@@ -720,6 +722,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
     isSelected,
   });
+  const voiceCall = useThreadVoiceCall(thread.environmentId, thread.id);
   const topStatus =
     status === "working"
       ? {
@@ -1482,7 +1485,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             topStatus.className,
                           )}
                         >
-                          <TopStatusIcon icon={topStatus.icon} className="size-4" />
+                          {voiceCall ? (
+                            <VoiceCallIcon call={voiceCall} className="size-4" />
+                          ) : (
+                            <TopStatusIcon icon={topStatus.icon} className="size-4" />
+                          )}
                           {/* Not a live region: a collapsed sidebar is inert, so
                             BackgroundThreadAnnouncer and the open thread's
                             timeline speak status changes instead. */}
@@ -1499,7 +1506,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         </span>
                       )
                     ) : (
-                      <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                      <span className="inline-flex items-center gap-1">
+                        {voiceCall && (
+                          <VoiceCallIcon
+                            call={voiceCall}
+                            className="size-4 shrink-0 text-info-foreground"
+                          />
+                        )}
+                        <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                      </span>
                     )}
                   </span>
                   {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
