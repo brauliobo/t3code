@@ -1,3 +1,4 @@
+import { CODEX_REALTIME_VOICES } from "./realtimeVoice.ts";
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import {
   AuthOrchestrationOperateScope,
@@ -674,9 +675,45 @@ export const CodexSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
+    voiceCalls: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Voice calls",
+        description: "Offer spoken calls on this account when it is signed in with ChatGPT.",
+        providerSettingsForm: { control: "switch" },
+      }),
+    ),
+    voice: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Call voice",
+        description: "The voice Codex speaks with on this account.",
+        providerSettingsForm: {
+          control: "select",
+          options: CODEX_REALTIME_VOICES,
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    voiceInstructions: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Call instructions",
+        description: "Extra instructions for the voice agent, such as a language or tone.",
+        providerSettingsForm: { control: "textarea", clearWhenEmpty: "omit" },
+      }),
+    ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: [
+      "binaryPath",
+      "homePath",
+      "shadowHomePath",
+      "launchArgs",
+      "voiceCalls",
+      "voice",
+      "voiceInstructions",
+    ],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;
